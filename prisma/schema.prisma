@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id             String             @id @default(cuid())
+  email          String             @unique
+  name           String?
+  avatarUrl      String?
+  targetRole     String?
+  preferredVoice String             @default("alex")
+  createdAt      DateTime           @default(now())
+  sessions       InterviewSession[]
+  resumes        Resume[]
+}
+
+model Resume {
+  id            String             @id @default(cuid())
+  userId        String
+  label         String?
+  rawText       String
+  parsedJson    Json               @default("{}")
+  fileUrl       String
+  isActive      Boolean            @default(false)
+  impactScore   Int?
+  clarityScore  Int?
+  atsScore      Int?
+  buzzwordScore Int?
+  feedbackJson  Json?
+  createdAt     DateTime           @default(now())
+  sessions      InterviewSession[]
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InterviewSession {
+  id                     String        @id @default(cuid())
+  userId                 String
+  resumeId               String?
+  mode                   InterviewMode
+  persona                String        @default("alex")
+  targetRole             String?
+  targetDurationMinutes  Int           @default(30)
+  transcript             Json          @default("[]")
+  scorecard              Json?
+  shareToken             String?       @unique
+  startedAt              DateTime      @default(now())
+  endedAt                DateTime?
+  durationSeconds        Int?
+  resume                 Resume?       @relation(fields: [resumeId], references: [id])
+  user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum InterviewMode {
+  BEHAVIORAL
+  TECHNICAL
+  CASE
+  STRESS
+}

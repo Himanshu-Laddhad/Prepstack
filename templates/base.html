@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}PrepStack{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo">Prep<span>Stack</span></a>
+    <div class="nav-links">
+      <a href="/interview" class="{% if active == 'interview' %}active{% endif %}">Interview</a>
+      <a href="/resume"    class="{% if active == 'resume' %}active{% endif %}">Resume</a>
+      <a href="/docs" target="_blank">API Docs</a>
+    </div>
+  </div>
+</nav>
+
+{% block body %}{% endblock %}
+
+<div id="toast"></div>
+
+<script>
+function toast(msg, duration = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Request failed' }));
+    throw new Error(err.detail || 'Request failed');
+  }
+  return res;
+}
+
+function scoreColor(score, invert = false) {
+  const v = invert ? 100 - score : score;
+  if (v >= 70) return 'var(--green)';
+  if (v >= 40) return 'var(--amber)';
+  return 'var(--red)';
+}
+
+function setDonut(svgEl, score, invert = false) {
+  const circ = 2 * Math.PI * 15.9;
+  const pct = Math.max(0, Math.min(100, score));
+  const offset = circ * (1 - pct / 100);
+  const valEl = svgEl.querySelector('.donut-val');
+  valEl.style.strokeDasharray = `${circ - offset} ${offset}`;
+  valEl.style.stroke = scoreColor(score, invert);
+}
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

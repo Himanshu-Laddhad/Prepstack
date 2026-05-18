@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}PrepStack — AI Interview & Resume Coach{% endblock %}
+
+{% block body %}
+<div class="page page-sm" style="padding-top: 80px; text-align: center;">
+
+  <h1 style="font-size: 2.2rem;">
+    Ace your next interview.
+  </h1>
+  <p class="text-2 mt-8" style="font-size: 1.05rem; max-width: 480px; margin: 8px auto 0;">
+    Practice with an AI interviewer, get your resume scored, and walk in confident.
+  </p>
+
+  <div class="flex gap-10 mt-40" style="justify-content: center; flex-wrap: wrap;">
+    <a href="/interview" class="btn btn-primary btn-lg">
+      Start Interview
+    </a>
+    <a href="/resume" class="btn btn-outline btn-lg">
+      Review Resume
+    </a>
+  </div>
+
+  <div class="divider mt-40"></div>
+
+  <div class="radio-grid radio-grid-2 mt-24" style="max-width: 640px; margin-left: auto; margin-right: auto; text-align: left;">
+
+    <div class="card card-pad">
+      <div class="rc-title" style="font-size: 1rem;">🎙 Mock Interviews</div>
+      <p class="text-2 text-sm mt-6">
+        Choose a mode — Behavioral, Technical, Case Study, or Stress Test.
+        Four AI personas with different styles. Streaming responses with a live timer.
+      </p>
+    </div>
+
+    <div class="card card-pad">
+      <div class="rc-title" style="font-size: 1rem;">📄 Resume Review</div>
+      <p class="text-2 text-sm mt-6">
+        Upload your PDF. Get scored on Impact, Clarity, ATS compatibility, and Buzzword density.
+        Step through AI suggestions one by one.
+      </p>
+    </div>
+
+    <div class="card card-pad">
+      <div class="rc-title" style="font-size: 1rem;">📊 Scorecards</div>
+      <p class="text-2 text-sm mt-6">
+        Every interview ends with a detailed scorecard across five dimensions with
+        strengths, improvements, and a standout moment quote.
+      </p>
+    </div>
+
+    <div class="card card-pad">
+      <div class="rc-title" style="font-size: 1rem;">💬 Suggestion Wizard</div>
+      <p class="text-2 text-sm mt-6">
+        Walk through each resume suggestion. Agree, skip, or ask follow-up questions.
+        The AI answers in context of your specific resume.
+      </p>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+{% block title %}Interview — PrepStack{% endblock %}
+
+{% block body %}
+<div class="chat-wrap">
+
+  <!-- Header -->
+  <div class="chat-header">
+    <div class="chat-header-meta">
+      <span class="badge badge-gray">{{ session.mode }}</span>
+      <span class="text-sm text-2">{{ session.persona | capitalize }}</span>
+      {% if session.targetRole %}
+      <span class="text-sm text-2">· {{ session.targetRole }}</span>
+      {% endif %}
+    </div>
+    <div class="flex items-center gap-16">
+      <span class="chat-timer" id="timer">00:00</span>
+      <button class="btn btn-outline btn-sm" id="tts-toggle" title="Toggle AI voice">🔊 Voice</button>
+      <button class="btn btn-outline btn-sm" id="end-btn">End Interview</button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="chat-messages" id="messages">
+    <div class="msg msg-assistant" id="greeting-msg">
+      <div class="msg-avatar">AI</div>
+      <div class="msg-bubble">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="chat-input-area">
+    <div class="chat-input-row">
+      <button class="btn btn-outline" id="mic-btn" title="Hold to speak">
+        🎤
+      </button>
+      <textarea class="textarea" id="user-input"
+                placeholder="Type your response or click 🎤 to speak…" rows="1"
+                style="min-height: 44px;"></textarea>
+      <button class="btn btn-primary" id="send-btn">Send</button>
+    </div>
+    <p class="text-xs text-2 mt-6" id="input-hint">Press Enter to send · Shift+Enter for new line · Click 🎤 to speak</p>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SESSION_ID = "{{ session.id }}";
+const DURATION   = {{ session.targetDurationMinutes }};
+const MODE       = "{{ session.mode }}";
+const PERSONA    = "{{ session.persona }}";
+const started    = Date.now();
+
+let history    = [];
+let isTyping   = false;
+let ended      = false;
+
+// ── Timer ───────────────────────────────────────────────────
+const timerEl = document.getElementById('timer');
+setInterval(() => {
+  const secs  = Math.floor((Date.now() - started) / 1000);
+  const m     = String(Math.floor(secs / 60)).padStart(2, '0');
+  const s     = String(secs % 60).padStart(2, '0');
+  timerEl.textContent = `${m}:${s}`;
+  const remaining = DURATION * 60 - secs;
+  timerEl.classList.toggle('urgent', remaining < 90);
+}, 1000);
+
+// ── Messages ─────────────────────────────────────────────────
+const messagesEl = document.getElementById('messages');
+
+function addMessage(role, content) {
+  const wrap = document.createElement('div');
+  wrap.className = `msg msg-${role}`;
+  const avatar = document.createElement('div');
+  avatar.className = 'msg-avatar';
+  avatar.textContent = role === 'user' ? 'You' : 'AI';
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.textContent = content;
+  if (role === 'assistant') wrap.append(avatar, bubble);
+  else wrap.append(bubble, avatar);
+  messagesEl.appendChild(wrap);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return bubble;
+}
+
+function showTyping() {
+  const greet = document.getElementById('greeting-msg');
+  if (greet) return greet.querySelector('.msg-bubble');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg msg-assistant';
+  wrap.id = 'typing-indicator';
+  wrap.innerHTML = `
+    <div class="msg-avatar">AI</div>
+    <div class="msg-bubble">
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+    </div>`;
+  messagesEl.appendChild(wrap);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return wrap.querySelector('.msg-bubble');
+}
+
+function removeTyping() {
+  document.getElementById('greeting-msg')?.remove();
+  document.getElementById('typing-indicator')?.remove();
+}
+
+// ── Send message ─────────────────────────────────────────────
+async function sendMessage(text) {
+  if (isTyping || ended || !text.trim()) return;
+  isTyping = true;
+  setSending(true);
+
+  addMessage('user', text);
+  history.push({ role: 'user', content: text });
+
+  const bubble = showTyping();
+
+  try {
+    const res = await fetch('/api/interview/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: SESSION_ID, message: text, history }),
+    });
+
+    if (!res.ok) throw new Error('AI response failed');
+
+    removeTyping();
+    const aiBubble = addMessage('assistant', '');
+    const reader   = res.body.getReader();
+    const decoder  = new TextDecoder();
+    let full = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      full += decoder.decode(value, { stream: true });
+      aiBubble.textContent = full.replace('[[END_INTERVIEW]]', '').trim();
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    const clean = full.replace('[[END_INTERVIEW]]', '').trim();
+    aiBubble.textContent = clean;
+    history.push({ role: 'assistant', content: clean });
+
+    speakText(clean);
+
+    if (full.includes('[[END_INTERVIEW]]')) {
+      await endInterview();
+    }
+  } catch (err) {
+    removeTyping();
+    toast(err.message);
+  } finally {
+    isTyping = false;
+    setSending(false);
+  }
+}
+
+function setSending(on) {
+  document.getElementById('send-btn').disabled = on;
+  document.getElementById('user-input').disabled = on;
+}
+
+// ── End interview ─────────────────────────────────────────────
+async function endInterview() {
+  if (ended) return;
+  ended = true;
+  document.getElementById('end-btn').disabled = true;
+  document.getElementById('end-btn').textContent = 'Generating scorecard…';
+
+  const now = new Date().toISOString();
+  const transcript = history.map(m => ({ ...m, timestamp: now }));
+
+  try {
+    const res = await apiFetch('/api/interview/end', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: SESSION_ID, transcript }),
+    });
+    const data = await res.json();
+    window.location.href = `/interview/results?id=${SESSION_ID}`;
+  } catch (err) {
+    toast('Could not generate scorecard: ' + err.message);
+    ended = false;
+    document.getElementById('end-btn').disabled = false;
+    document.getElementById('end-btn').textContent = 'End Interview';
+  }
+}
+
+// ── Voice output (TTS — free browser speechSynthesis) ─────────
+let ttsEnabled = true;
+
+const ttsToggle = document.getElementById('tts-toggle');
+ttsToggle.addEventListener('click', () => {
+  ttsEnabled = !ttsEnabled;
+  ttsToggle.textContent = ttsEnabled ? '🔊 Voice' : '🔇 Voice';
+  ttsToggle.style.opacity = ttsEnabled ? '1' : '0.45';
+  if (!ttsEnabled) speechSynthesis.cancel();
+});
+
+function speakText(text) {
+  if (!ttsEnabled || !text || !window.speechSynthesis) return;
+  speechSynthesis.cancel();                         // stop any current speech
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.rate  = 1.0;
+  utter.pitch = 1.0;
+
+  // Pick a voice that matches the persona gender if available
+  const voices = speechSynthesis.getVoices();
+  const femalePersonas = ['sarah', 'emma', 'olivia'];
+  const wantFemale = femalePersonas.includes(PERSONA.toLowerCase());
+  const match = voices.find(v =>
+    v.lang.startsWith('en') &&
+    (wantFemale ? /female|woman|girl/i.test(v.name) : !/female|woman|girl/i.test(v.name))
+  ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+  if (match) utter.voice = match;
+
+  speechSynthesis.speak(utter);
+}
+
+// ── Voice input ───────────────────────────────────────────────
+const micBtn  = document.getElementById('mic-btn');
+const hintEl  = document.getElementById('input-hint');
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (!SpeechRecognition) {
+  micBtn.style.display = 'none';
+  hintEl.textContent = 'Press Enter to send · Shift+Enter for new line';
+} else {
+  const recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  let listening = false;
+  let baseText  = '';   // text already in box before mic started
+
+  recognition.onstart = () => {
+    listening = true;
+    micBtn.classList.add('listening');
+    micBtn.textContent = '🔴';
+    hintEl.textContent = 'Listening… click 🔴 to stop';
+    baseText = input.value;
+  };
+
+  recognition.onresult = (e) => {
+    let interim = '';
+    let final   = '';
+    for (const result of e.results) {
+      if (result.isFinal) final   += result[0].transcript;
+      else                interim += result[0].transcript;
+    }
+    input.value = baseText + (baseText && (final || interim) ? ' ' : '') + (final || interim);
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  };
+
+  recognition.onend = () => {
+    listening = false;
+    micBtn.classList.remove('listening');
+    micBtn.textContent = '🎤';
+    hintEl.textContent = 'Press Enter to send · Shift+Enter for new line · Click 🎤 to speak';
+    input.focus();
+  };
+
+  recognition.onerror = (e) => {
+    if (e.error !== 'no-speech') toast('Mic error: ' + e.error);
+    recognition.onend();
+  };
+
+  micBtn.addEventListener('click', () => {
+    if (listening) { recognition.stop(); }
+    else           { recognition.start(); }
+  });
+}
+
+// ── Input handling ────────────────────────────────────────────
+const input = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+
+sendBtn.addEventListener('click', () => {
+  const text = input.value.trim();
+  if (text) { input.value = ''; sendMessage(text); }
+});
+
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (text) { input.value = ''; sendMessage(text); }
+  }
+  // Auto-resize
+  setTimeout(() => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  }, 0);
+});
+
+document.getElementById('end-btn').addEventListener('click', () => {
+  if (confirm('End the interview and generate your scorecard?')) endInterview();
+});
+
+// ── Auto-start: get the first AI question ────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  sendMessage('Hello, I am ready to start the interview.');
+  input.focus();
+});
+</script>
+{% endblock %}

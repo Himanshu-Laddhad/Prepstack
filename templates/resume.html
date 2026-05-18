@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Resume — PrepStack{% endblock %}
+
+{% block body %}
+<div class="page page-md">
+
+  <div class="flex items-center justify-between" style="flex-wrap:wrap; gap:12px;">
+    <h1>Resume</h1>
+    <span class="text-2 text-sm">{{ resumes|length }}/5 uploaded</span>
+  </div>
+
+  <!-- Upload -->
+  {% if resumes|length < 5 %}
+  <div class="card card-pad mt-24">
+    <h3>Upload a Resume</h3>
+    <div class="upload-zone mt-12" id="drop-zone">
+      <div class="upload-icon">📄</div>
+      <p class="text-sm" style="font-weight:500;">Drop a PDF here, or <span style="text-decoration:underline; cursor:pointer;" id="browse-link">browse</span></p>
+      <p class="text-xs text-2 mt-4">PDF only · max 5 MB</p>
+      <input type="file" id="file-input" accept=".pdf" style="display:none;">
+    </div>
+    <div class="flex items-center gap-10 mt-12">
+      <input class="input" id="label-input" placeholder="Label (optional)" style="max-width:240px;">
+      <button class="btn btn-primary" id="upload-btn" disabled>Upload</button>
+    </div>
+    <div id="upload-status" class="text-sm text-2 mt-8 hidden"></div>
+  </div>
+  {% endif %}
+
+  <!-- Resume list -->
+  <div class="flex flex-col gap-10 mt-24" id="resume-list">
+    {% for r in resumes %}
+    <div class="card card-pad resume-card" id="resume-{{ r.id }}">
+      <div class="resume-card-info">
+        <div class="flex items-center gap-8">
+          <span style="font-weight:600;">{{ r.label or ('Resume ' + loop.index|string) }}</span>
+          {% if r.isActive %}<span class="badge badge-green">Active</span>{% endif %}
+        </div>
+        <div class="text-xs text-2 mt-4">Uploaded {{ r.createdAt.strftime('%b %d, %Y') }}</div>
+        {% if r.impactScore is not none %}
+        <div class="resume-card-scores mt-8">
+          <span class="score-pill">Impact {{ r.impactScore }}</span>
+          <span class="score-pill">Clarity {{ r.clarityScore }}</span>
+          <span class="score-pill">ATS {{ r.atsScore }}</span>
+          <span class="score-pill">Buzz {{ r.buzzwordScore }}</span>
+        </div>
+        {% endif %}
+      </div>
+      <div class="resume-card-actions">
+        {% if r.feedbackJson %}
+        <a href="/resume/review?id={{ r.id }}" class="btn btn-outline btn-sm">View Review</a>
+        {% else %}
+        <button class="btn btn-primary btn-sm" onclick="runReview('{{ r.id }}', this)">Review</button>
+        {% endif %}
+        {% if not r.isActive %}
+        <button class="btn btn-outline btn-sm" onclick="activate('{{ r.id }}', this)">Activate</button>
+        {% endif %}
+        <button class="btn btn-danger btn-sm" onclick="deleteResume('{{ r.id }}', this)">Delete</button>
+      </div>
+    </div>
+    {% else %}
+    <div class="card card-pad text-center text-2" style="padding: 40px;" id="empty-state">
+      No resumes yet. Upload one above.
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Upload ──────────────────────────────────────────────────
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const uploadBtn  = document.getElementById('upload-btn');
+const statusEl   = document.getElementById('upload-status');
+let selectedFile = null;
+
+document.getElementById('browse-link')?.addEventListener('click', () => fileInput?.click());
+fileInput?.addEventListener('change', () => setFile(fileInput.files[0]));
+
+dropZone?.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone?.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone?.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  setFile(e.dataTransfer.files[0]);
+});
+
+function setFile(f) {
+  if (!f || !f.name.endsWith('.pdf')) { toast('Please select a PDF file.'); return; }
+  if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); return; }
+  selectedFile = f;
+  dropZone.querySelector('p').textContent = f.name;
+  uploadBtn.disabled = false;
+}
+
+uploadBtn?.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  uploadBtn.disabled = true;
+  uploadBtn.innerHTML = '<span class="spinner"></span>';
+  showStatus('Uploading…');
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  const label = document.getElementById('label-input').value.trim();
+  if (label) fd.append('label', label);
+
+  try {
+    const res = await fetch('/api/resume/upload', { method: 'POST', body: fd });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    showStatus('Uploaded! Reloading…');
+    setTimeout(() => location.reload(), 800);
+  } catch (err) {
+    toast(err.message);
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = 'Upload';
+    hideStatus();
+  }
+});
+
+function showStatus(msg) {
+  statusEl.textContent = msg;
+  statusEl.classList.remove('hidden');
+}
+function hideStatus() { statusEl.classList.add('hidden'); }
+
+// ── Review ──────────────────────────────────────────────────
+async function runReview(id, btn) {
+  const role = prompt('Target role? (optional, press Enter to skip)');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    await apiFetch('/api/resume/review', {
+      method: 'POST',
+      body: JSON.stringify({ resumeId: id, targetRole: role || null }),
+    });
+    window.location.href = `/resume/review?id=${id}`;
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+    btn.textContent = 'Review';
+  }
+}
+
+// ── Activate ─────────────────────────────────────────────────
+async function activate(id, btn) {
+  btn.disabled = true;
+  try {
+    await apiFetch('/api/resume/activate', {
+      method: 'POST',
+      body: JSON.stringify({ resumeId: id }),
+    });
+    location.reload();
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────
+async function deleteResume(id, btn) {
+  if (!confirm('Delete this resume? This cannot be undone.')) return;
+  btn.disabled = true;
+  try {
+    await apiFetch(`/api/resume/${id}`, { method: 'DELETE' });
+    document.getElementById(`resume-${id}`)?.remove();
+    toast('Resume deleted.');
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+  }
+}
+</script>
+{% endblock %}

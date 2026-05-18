@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}New Interview — PrepStack{% endblock %}
+
+{% block body %}
+<div class="page page-md">
+  <h1>New Interview</h1>
+  <p class="text-2 mt-6">Configure your session, then hit Start.</p>
+
+  <form id="setup-form" class="flex flex-col gap-24 mt-32">
+
+    <!-- Mode -->
+    <div class="field">
+      <div class="label">Interview Mode</div>
+      <div class="radio-grid radio-grid-4">
+        {% for mode in [
+          ("BEHAVIORAL", "Behavioral", "STAR-method, competency-based"),
+          ("TECHNICAL",  "Technical",  "Problem-solving, role knowledge"),
+          ("CASE",       "Case Study", "Consulting-style analysis"),
+          ("STRESS",     "Stress Test","Rapid-fire, challenging")
+        ] %}
+        <div class="radio-card">
+          <input type="radio" name="mode" id="mode-{{ mode[0] }}" value="{{ mode[0] }}"
+                 {% if loop.first %}checked{% endif %}>
+          <label for="mode-{{ mode[0] }}">
+            <div class="rc-title">{{ mode[1] }}</div>
+            <div class="rc-desc">{{ mode[2] }}</div>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Persona -->
+    <div class="field">
+      <div class="label">Interviewer Persona</div>
+      <div class="radio-grid radio-grid-4">
+        {% for p in [
+          ("alex",   "Alex",    "FAANG-style, neutral"),
+          ("terry",  "Terry",   "Blunt and demanding"),
+          ("frankie","Frankie", "Warm and encouraging"),
+          ("panel",  "Panel",   "3 interviewers rotating")
+        ] %}
+        <div class="radio-card">
+          <input type="radio" name="persona" id="persona-{{ p[0] }}" value="{{ p[0] }}"
+                 {% if loop.first %}checked{% endif %}>
+          <label for="persona-{{ p[0] }}">
+            <div class="rc-title">{{ p[1] }}</div>
+            <div class="rc-desc">{{ p[2] }}</div>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Target role + duration -->
+    <div class="radio-grid radio-grid-2">
+      <div class="field">
+        <label class="label" for="targetRole">Target Role <span class="text-3">(optional)</span></label>
+        <input class="input" id="targetRole" name="targetRole"
+               placeholder="e.g. Product Manager, SWE, Consultant">
+      </div>
+      <div class="field">
+        <label class="label" for="duration">Duration: <span id="dur-label">30 min</span></label>
+        <input type="range" id="duration" name="duration" min="15" max="60" step="5" value="30"
+               style="margin-top: 8px; width: 100%;"
+               oninput="document.getElementById('dur-label').textContent = this.value + ' min'">
+        <div class="flex justify-between text-xs text-2 mt-4">
+          <span>15 min</span><span>60 min</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resume -->
+    {% if resumes %}
+    <div class="field">
+      <label class="label" for="resumeId">Resume <span class="text-3">(optional)</span></label>
+      <select class="select" id="resumeId" name="resumeId">
+        <option value="">No resume</option>
+        {% for r in resumes %}
+        <option value="{{ r.id }}" {% if r.isActive %}selected{% endif %}>
+          {{ r.label or 'Resume ' + loop.index|string }} — uploaded {{ r.createdAt.strftime('%b %d') }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    {% else %}
+    <div class="card card-pad flex items-center gap-10" style="border-style: dashed;">
+      <span class="text-2 text-sm">No resume uploaded yet.</span>
+      <a href="/resume" class="btn btn-outline btn-sm">Upload Resume</a>
+    </div>
+    {% endif %}
+
+    <div>
+      <button type="submit" class="btn btn-primary btn-lg" id="start-btn">
+        Start Interview
+      </button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('setup-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('start-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Starting...';
+
+  const form = e.target;
+  const mode     = form.querySelector('[name=mode]:checked').value;
+  const persona  = form.querySelector('[name=persona]:checked').value;
+  const targetRole = form.querySelector('[name=targetRole]').value.trim() || null;
+  const duration = parseInt(form.querySelector('[name=duration]').value);
+  const resumeId = form.querySelector('[name=resumeId]')?.value || null;
+
+  try {
+    const res = await apiFetch('/api/interview/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        mode, persona, targetRole,
+        targetDurationMinutes: duration,
+        resumeId: resumeId || null,
+      }),
+    });
+    const data = await res.json();
+    window.location.href = `/interview/session?id=${data.sessionId}`;
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+    btn.textContent = 'Start Interview';
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Scorecard — PrepStack{% endblock %}
+
+{% block body %}
+<div class="page page-md">
+
+  <div class="flex items-center justify-between" style="flex-wrap: wrap; gap: 12px;">
+    <div>
+      <h1>Interview Scorecard</h1>
+      <p class="text-2 text-sm mt-4">
+        {{ session.mode }} · {{ session.persona | capitalize }}
+        {% if session.targetRole %} · {{ session.targetRole }}{% endif %}
+        {% if session.durationSeconds %} · {{ (session.durationSeconds // 60) }} min{% endif %}
+      </p>
+    </div>
+    <a href="/interview" class="btn btn-outline">New Interview</a>
+  </div>
+
+  <!-- Overall score -->
+  <div class="card card-pad mt-24 flex items-center gap-24" style="flex-wrap: wrap;">
+    <div class="donut-wrap donut-lg">
+      <svg class="donut" viewBox="0 0 36 36" id="overall-donut">
+        <circle class="donut-bg" cx="18" cy="18" r="15.9"/>
+        <circle class="donut-val" cx="18" cy="18" r="15.9"
+                stroke-dasharray="0 100" stroke-dashoffset="0"/>
+      </svg>
+      <div class="donut-score" id="overall-score">—</div>
+      <div class="donut-label">Overall</div>
+    </div>
+    <div style="flex: 1; min-width: 220px;">
+      <p style="font-size: 1rem; line-height: 1.65;" id="summary-text">{{ scorecard.summary }}</p>
+      {% if scorecard.standoutMoment %}
+      <blockquote style="margin-top: 14px; padding: 10px 14px; border-left: 3px solid var(--border-2);
+                         color: var(--text-2); font-size: .875rem; font-style: italic;">
+        "{{ scorecard.standoutMoment }}"
+      </blockquote>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Dimension scores -->
+  {% set dims = scorecard.dimensions %}
+  <div class="scores-grid mt-24">
+    {% for key, label in [
+      ("communicationClarity", "Communication"),
+      ("relevance",            "Relevance"),
+      ("starAdherence",        "STAR Method"),
+      ("resumeAlignment",      "Resume Fit"),
+      ("confidenceProxy",      "Confidence")
+    ] %}
+    {% set dim = dims.get(key) %}
+    {% if dim %}
+    <div class="card card-pad dim-card">
+      <div class="donut-wrap">
+        <svg class="donut" viewBox="0 0 36 36" data-score="{{ dim.score }}">
+          <circle class="donut-bg" cx="18" cy="18" r="15.9"/>
+          <circle class="donut-val" cx="18" cy="18" r="15.9"
+                  stroke-dasharray="0 100" stroke-dashoffset="0"/>
+        </svg>
+        <div class="donut-score">{{ dim.score }}</div>
+        <div class="donut-label">{{ label }}</div>
+      </div>
+      <p class="text-xs text-2 mt-8" style="text-align: center;">{{ dim.note }}</p>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  <!-- Strengths & Improvements -->
+  <div class="radio-grid radio-grid-2 mt-24" style="gap: 16px;">
+    <div class="card card-pad">
+      <h3>Strengths</h3>
+      <ul class="strengths-list list-green mt-12">
+        {% for s in scorecard.strengths %}
+        <li>{{ s }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card card-pad">
+      <h3>Areas to Improve</h3>
+      <ul class="strengths-list list-amber mt-12">
+        {% for s in scorecard.improvements %}
+        <li>{{ s }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <!-- Transcript -->
+  {% if session.transcript %}
+  <div class="mt-32">
+    <h2>Transcript</h2>
+    <div class="flex flex-col gap-10 mt-16">
+      {% for msg in session.transcript %}
+      <div class="msg {% if msg.role == 'user' %}msg-user{% else %}msg-assistant{% endif %}"
+           style="max-width: 75%;">
+        {% if msg.role == 'assistant' %}
+        <div class="msg-avatar">AI</div>
+        {% endif %}
+        <div class="msg-bubble">{{ msg.content }}</div>
+        {% if msg.role == 'user' %}
+        <div class="msg-avatar">You</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // Overall donut
+  const score = {{ scorecard.overallScore }};
+  document.getElementById('overall-score').textContent = score;
+  setDonut(document.getElementById('overall-donut'), score);
+
+  // Dimension donuts
+  document.querySelectorAll('[data-score]').forEach(svg => {
+    setDonut(svg, parseInt(svg.dataset.score));
+  });
+});
+</script>
+{% endblock %}

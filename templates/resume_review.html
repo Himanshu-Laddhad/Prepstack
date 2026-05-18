@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Resume Review — PrepStack{% endblock %}
+
+{% block body %}
+<div class="page page-md">
+
+  <div class="flex items-center justify-between" style="flex-wrap:wrap; gap:12px;">
+    <div>
+      <h1>Resume Review</h1>
+      <p class="text-2 text-sm mt-4">{{ resume.label or 'Resume' }}</p>
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-outline btn-sm" onclick="reRunReview()">Re-run Review</button>
+      <a href="/resume" class="btn btn-ghost btn-sm">Back</a>
+    </div>
+  </div>
+
+  {% if not review %}
+  <div class="card card-pad mt-24 text-center text-2" style="padding: 40px;">
+    No review yet.
+    <button class="btn btn-primary btn-sm" style="margin-left:12px;" onclick="reRunReview()">Run Review</button>
+  </div>
+  {% else %}
+
+  <!-- Summary -->
+  <div class="card card-pad mt-24">
+    <p style="line-height: 1.65;">{{ review.summary }}</p>
+  </div>
+
+  <!-- Score donuts -->
+  <div class="card card-pad mt-16">
+    <div style="display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; text-align: center;">
+      {% for key, label, invert in [
+        ("impact",          "Impact",   false),
+        ("clarity",         "Clarity",  false),
+        ("atsCompatibility","ATS",      false),
+        ("buzzwordDensity", "Buzzword", true)
+      ] %}
+      {% set score = review.scores[key] %}
+      <div class="donut-wrap">
+        <svg class="donut" viewBox="0 0 36 36"
+             data-score="{{ score }}" data-invert="{{ 'true' if invert else 'false' }}">
+          <circle class="donut-bg" cx="18" cy="18" r="15.9"/>
+          <circle class="donut-val" cx="18" cy="18" r="15.9"
+                  stroke-dasharray="0 100" stroke-dashoffset="0"/>
+        </svg>
+        <div class="donut-score">{{ score }}</div>
+        <div class="donut-label">{{ label }}</div>
+        {% if invert %}
+        <div class="text-xs text-2">(lower = better)</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Section feedback -->
+  <div class="card mt-16">
+    <div style="padding: 20px 24px; border-bottom: 1px solid var(--border);"><h3>Section Feedback</h3></div>
+    <div style="padding: 0 24px;">
+      {% for key, label in [
+        ("summary","Summary"), ("experience","Experience"),
+        ("education","Education"), ("skills","Skills"), ("projects","Projects")
+      ] %}
+      {% set sf = review.sectionFeedback[key] %}
+      <div class="section-row">
+        <div>
+          <div class="flex items-center gap-8">
+            <span style="font-weight:600; font-size:.9rem;">{{ label }}</span>
+            {% if sf.present %}
+            <span class="badge badge-green">Present</span>
+            {% else %}
+            <span class="badge badge-gray">Missing</span>
+            {% endif %}
+          </div>
+          <p class="text-sm text-2 mt-4">{{ sf.feedback }}</p>
+          {% if sf.highlights %}
+          <ul style="margin-top: 6px; padding-left: 16px; font-size:.82rem; color: var(--text-2);">
+            {% for h in sf.highlights %}<li>{{ h }}</li>{% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Keywords -->
+  <div class="radio-grid radio-grid-2 mt-16" style="gap: 12px;">
+    <div class="card card-pad">
+      <h3>Keywords Found</h3>
+      <div class="flex mt-10" style="flex-wrap:wrap; gap:6px;">
+        {% for kw in review.keywordsDetected %}
+        <span class="badge badge-green">{{ kw }}</span>
+        {% endfor %}
+        {% if not review.keywordsDetected %}<span class="text-sm text-2">None detected</span>{% endif %}
+      </div>
+    </div>
+    <div class="card card-pad">
+      <h3>Keywords Missing</h3>
+      <div class="flex mt-10" style="flex-wrap:wrap; gap:6px;">
+        {% for kw in review.keywordsMissing %}
+        <span class="badge badge-amber">{{ kw }}</span>
+        {% endfor %}
+        {% if not review.keywordsMissing %}<span class="text-sm text-2">None</span>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Suggestion wizard -->
+  {% if review.suggestions %}
+  <div class="mt-32">
+    <div class="flex items-center justify-between mb-16">
+      <h2>Suggestions <span class="text-2 text-sm" style="font-weight:400;">({{ review.suggestions|length }} total)</span></h2>
+      <span class="text-sm text-2" id="wizard-counter"></span>
+    </div>
+
+    <div id="wizard"></div>
+
+    <div class="flex items-center gap-10 mt-16" id="wizard-nav">
+      <button class="btn btn-outline btn-sm" id="prev-btn" onclick="stepWizard(-1)">← Prev</button>
+      <button class="btn btn-outline btn-sm" id="next-btn" onclick="stepWizard(1)">Next →</button>
+    </div>
+  </div>
+  {% endif %}
+
+  {% endif %} {# end if review #}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Init donuts ───────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[data-score]').forEach(svg => {
+    const score  = parseInt(svg.dataset.score);
+    const invert = svg.dataset.invert === 'true';
+    setDonut(svg, score, invert);
+  });
+  if (SUGGESTIONS.length) renderSuggestion(currentIdx);
+});
+
+// ── Re-run review ─────────────────────────────────────────────
+async function reRunReview() {
+  const role = prompt('Target role? (optional)');
+  try {
+    await apiFetch('/api/resume/review', {
+      method: 'POST',
+      body: JSON.stringify({ resumeId: RESUME_ID, targetRole: role || null }),
+    });
+    location.reload();
+  } catch (err) { toast(err.message); }
+}
+
+// ── Suggestion wizard ─────────────────────────────────────────
+const RESUME_ID   = "{{ resume.id }}";
+const SUGGESTIONS = {{ review.suggestions | tojson if review else '[]' }};
+const STATE       = {{ (review.parsedJson or {}) | tojson if review else '{}' }};
+
+let currentIdx = 0;
+const statusMap = {};  // suggestionId -> 'accepted'|'skipped'|'questioned'
+
+function renderSuggestion(idx) {
+  const s = SUGGESTIONS[idx];
+  if (!s) return;
+  document.getElementById('wizard-counter').textContent = `${idx + 1} of ${SUGGESTIONS.length}`;
+
+  const status  = statusMap[s.id] || 'pending';
+  const statusBadge = {
+    pending:    '',
+    accepted:   '<span class="badge badge-green">Accepted</span>',
+    skipped:    '<span class="badge badge-gray">Skipped</span>',
+    questioned: '<span class="badge badge-blue">Discussed</span>',
+  }[status];
+
+  const priorityBadge = {
+    high:   'badge-red',
+    medium: 'badge-amber',
+    low:    'badge-gray',
+  }[s.priority] || 'badge-gray';
+
+  document.getElementById('wizard').innerHTML = `
+    <div class="suggestion-card">
+      <div class="suggestion-card-header">
+        <span class="badge ${priorityBadge}">${s.priority}</span>
+        <span style="font-weight:600; font-size:.95rem;">${s.title}</span>
+        ${statusBadge}
+      </div>
+      <div class="suggestion-card-body">
+        ${s.originalText ? `<div>
+          <div class="text-xs text-2 mb-4">Original</div>
+          <p class="text-sm" style="color:var(--text-2); font-style:italic;">"${s.originalText}"</p>
+        </div>` : ''}
+        <div>
+          <div class="text-xs text-2 mb-4">Why it matters</div>
+          <p class="text-sm">${s.rationale}</p>
+        </div>
+        <div>
+          <div class="text-xs text-2 mb-4">Recommendation</div>
+          <p class="text-sm">${s.recommendation}</p>
+        </div>
+        <div>
+          <div class="text-xs text-2 mb-4">Draft rewrite</div>
+          <div class="suggestion-rewrite">${s.draftRewrite}</div>
+        </div>
+        <div class="suggestion-actions">
+          <button class="btn btn-primary btn-sm" onclick="agree('${s.id}')">✓ Accept</button>
+          <button class="btn btn-outline btn-sm" onclick="skipSuggestion('${s.id}')">Skip</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleQuestion('${s.id}')">Ask question</button>
+        </div>
+        <div id="q-area-${s.id}" class="hidden">
+          <div class="question-input-row">
+            <input class="input" id="q-input-${s.id}" placeholder="Ask something about this suggestion…">
+            <button class="btn btn-outline btn-sm" onclick="askQuestion('${s.id}')">Ask</button>
+          </div>
+          <div id="q-answer-${s.id}" class="text-sm text-2 mt-8" style="line-height:1.6;"></div>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('prev-btn').disabled = idx === 0;
+  document.getElementById('next-btn').disabled = idx === SUGGESTIONS.length - 1;
+}
+
+function stepWizard(dir) {
+  const next = currentIdx + dir;
+  if (next < 0 || next >= SUGGESTIONS.length) return;
+  currentIdx = next;
+  renderSuggestion(currentIdx);
+}
+
+async function agree(id) {
+  try {
+    await apiFetch('/api/resume/review/agree', {
+      method: 'POST', body: JSON.stringify({ resumeId: RESUME_ID, suggestionId: id }),
+    });
+    statusMap[id] = 'accepted';
+    renderSuggestion(currentIdx);
+    toast('Suggestion accepted.');
+  } catch (err) { toast(err.message); }
+}
+
+async function skipSuggestion(id) {
+  try {
+    await apiFetch('/api/resume/review/skip', {
+      method: 'POST', body: JSON.stringify({ resumeId: RESUME_ID, suggestionId: id }),
+    });
+    statusMap[id] = 'skipped';
+    renderSuggestion(currentIdx);
+    toast('Suggestion skipped.');
+  } catch (err) { toast(err.message); }
+}
+
+function toggleQuestion(id) {
+  const area = document.getElementById(`q-area-${id}`);
+  area.classList.toggle('hidden');
+  if (!area.classList.contains('hidden')) {
+    document.getElementById(`q-input-${id}`)?.focus();
+  }
+}
+
+async function askQuestion(id) {
+  const input  = document.getElementById(`q-input-${id}`);
+  const answer = document.getElementById(`q-answer-${id}`);
+  const q = input.value.trim();
+  if (!q) return;
+  input.disabled = true;
+  answer.textContent = 'Thinking…';
+  try {
+    const res = await apiFetch('/api/resume/review/question', {
+      method: 'POST',
+      body: JSON.stringify({ resumeId: RESUME_ID, suggestionId: id, question: q }),
+    });
+    const data = await res.json();
+    answer.textContent = data.answer;
+    statusMap[id] = 'questioned';
+    input.disabled = false;
+    input.value = '';
+  } catch (err) {
+    answer.textContent = '';
+    input.disabled = false;
+    toast(err.message);
+  }
+}
+</script>
+{% endblock %}
