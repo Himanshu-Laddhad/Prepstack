@@ -4,6 +4,9 @@
 
 PrepStack helps job seekers practice interviews with a realistic AI interviewer, get structured feedback on their resume, and walk into real interviews more confident. The project demonstrates end-to-end product engineering: a clean backend API, a lightweight frontend, and practical AI integration — all in a single Python codebase with zero external services required to run locally.
 
+Here is a link of my Medium Article[https://h11laddhad.medium.com/why-i-used-three-different-llms-to-build-one-interview-coach-11131ca489d6] explain the working of real working website in further detail.
+Here is the link to the website[https://prepstack.ryg.lol/] if you want to try it out.
+I am currently looking for Data Scientist and ML/AI Engineer roles.Lets connect on Linkedin[https://www.linkedin.com/in/himanshu-laddhad/]
 ---
 
 ## Business context
